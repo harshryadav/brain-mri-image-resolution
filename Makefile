@@ -3,9 +3,15 @@
         eval run-all smoke test lint \
         docker-build docker-shell docker-preprocess docker-train tb clean
 
-# Python executable (requires >= 3.10). Override with: make PYTHON=python3.10 ...
-PYTHON ?= python3
+# Python executable (requires >= 3.10). Search PATH for python3.10 or python3.
+# If not found, you can override: make PYTHON=python3.10 ... or set it in your shell
+PYTHON_SEARCH := python3.10 python3
+PYTHON := $(firstword $(shell $(foreach py,$(PYTHON_SEARCH),which $(py) 2>/dev/null ||) true))
 CONFIG ?= configs/e2_srcnn.yaml
+
+ifeq ($(PYTHON),)
+$(error Python 3.10+ not found in PATH. Please install Python 3.10+ or set PYTHON=/path/to/python)
+endif
 
 help:
 	@echo "Common targets:"
