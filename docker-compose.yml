@@ -1,0 +1,49 @@
+services:
+  dev:
+    build: .
+    image: brainsr:latest
+    container_name: brainsr-dev
+    working_dir: /workspace
+    environment:
+      - PYTHONPATH=/workspace/src
+    volumes:
+      - ${FASTMRI_DIR:-./data/raw}:/data/raw:ro
+      - ${PROCESSED_DIR:-./data/processed}:/workspace/data/processed
+      - ${RUNS_DIR:-./runs}:/workspace/runs
+      - ./data/sample:/workspace/data/sample
+      - ./src:/workspace/src
+      - ./configs:/workspace/configs
+      - ./scripts:/workspace/scripts
+      - ./tests:/workspace/tests
+      - ./notebooks:/workspace/notebooks
+    stdin_open: true
+    tty: true
+    # Uncomment the next block when running on a CUDA host with the NVIDIA
+    # Container Toolkit installed. Leave commented for CPU dev.
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  preprocess:
+    extends: dev
+    container_name: brainsr-preprocess
+    entrypoint: ["python", "-m", "brainsr.cli.preprocess"]
+    command: ["--input-dir", "/data/raw", "--output-dir", "/workspace/data/processed"]
+
+  train:
+    extends: dev
+    container_name: brainsr-train
+    entrypoint: ["python", "-m", "brainsr.cli.train"]
+    # pass `--config configs/eN_*.yaml` via `docker compose run --rm train --config ...`
+
+  tensorboard:
+    extends: dev
+    container_name: brainsr-tb
+    entrypoint: ["tensorboard"]
+    command: ["--logdir", "/workspace/runs", "--port", "6006", "--bind_all"]
+    ports:
+      - "6006:6006"

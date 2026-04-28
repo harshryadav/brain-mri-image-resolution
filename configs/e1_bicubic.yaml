@@ -1,0 +1,10 @@
+defaults: base.yaml
+
+output_dir: runs/e1_bicubic
+
+epochs: 0  # bicubic baseline: no training; trainer runs eval only
+batch_size: 16
+
+model:
+  name: bicubic
+  scale: 4

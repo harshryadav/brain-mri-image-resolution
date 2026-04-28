@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+runs/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+
+# Project data and runs (large / not redistributable)
+data/raw/
+data/processed/
+runs/
+*.h5
+*.hdf5
+*.mat
+*.ckpt
+*.pt
+*.pth
+*.npy
+!data/sample/**/*.npy
+!data/sample/**/*.json
+
+# Env
+.env
+*.local
+
+# Notebooks checkpoints
+.ipynb_checkpoints/

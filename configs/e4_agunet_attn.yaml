@@ -1,0 +1,19 @@
+defaults: base.yaml
+
+output_dir: runs/e4_agunet_attn
+
+epochs: 100
+batch_size: 16
+lr: 1.0e-3
+
+model:
+  name: agunet
+  in_channels: 1
+  out_channels: 1
+  num_filters: 16
+  depth: 4
+  normalization: instancenorm
+  activation: leakyrelu
+  dropout: 0.0
+  use_attention: true
+  residual: true
