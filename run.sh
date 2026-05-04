@@ -44,6 +44,21 @@ if ! docker compose version >/dev/null 2>&1; then
     exit 1
 fi
 
+# Daemon health check. The CLI binaries above work without the daemon, but
+# `docker compose build` will silently hang at "[+] Building 0.0s (0/0)" if
+# the daemon isn't reachable. Fail loudly instead.
+if ! docker info >/dev/null 2>&1; then
+    echo "ERROR: Cannot connect to the Docker daemon." >&2
+    echo "  - On macOS / Windows: open the Docker Desktop app and wait for the" >&2
+    echo "    whale icon in your menu bar to stop animating (~30s first time)." >&2
+    echo "  - On Linux: start the service, e.g. 'sudo systemctl start docker'." >&2
+    echo "Then re-run: bash run.sh" >&2
+    echo >&2
+    echo "Diagnostic output from 'docker info':" >&2
+    docker info 2>&1 | head -n 5 | sed 's/^/  /' >&2
+    exit 1
+fi
+
 # Make sure .env exists so docker compose's variable substitution works.
 if [[ ! -f .env ]]; then
     if [[ -f .env.example ]]; then
