@@ -90,7 +90,8 @@ def _download_gdrive_folder(url: str, dest_dir: Path) -> None:
     )
     dest_dir.mkdir(parents=True, exist_ok=True)
     log.info("gdown.download_folder: %s -> %s", url, dest_dir)
-    gdown.download_folder(url=url, output=str(dest_dir), quiet=False, use_cookies=False)
+    # Keep the call to widely-supported kwargs only.
+    gdown.download_folder(url=url, output=str(dest_dir), quiet=False)
     if not any(dest_dir.iterdir()):
         raise SystemExit(
             f"gdown produced no files at {dest_dir}. "
@@ -106,7 +107,16 @@ def _download_from_gdrive(file_id: str, dest: Path) -> Path:
             "gdown is required for Google Drive downloads. Install with `pip install gdown`."
         ) from e
     log.info("Downloading via gdown: id=%s -> %s", file_id, dest)
-    gdown.download(id=file_id, output=str(dest), quiet=False, fuzzy=True)
+    # We pass the file id directly so we don't need gdown's URL fuzzy-parsing.
+    # `fuzzy` was deprecated/removed in recent gdown releases, and `use_cookies`
+    # is also version-sensitive, so we keep the call to a small, stable subset
+    # of kwargs that all 4.x/5.x gdown versions accept.
+    try:
+        gdown.download(id=file_id, output=str(dest), quiet=False)
+    except TypeError:
+        # Older gdown (<4.4) doesn't accept the id kwarg; fall back to a URL.
+        url = f"https://drive.google.com/uc?id={file_id}"
+        gdown.download(url, str(dest), quiet=False)
     if not dest.exists() or dest.stat().st_size == 0:
         raise SystemExit(
             f"gdown produced no file at {dest}. "
