@@ -97,7 +97,11 @@ cd ~/brain-mri-image-resolution
 source .venv/bin/activate
 nvidia-smi          # should show an A100 / H100 / similar
 python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
-make smoke          # runs SRCNN for 1 epoch on synthetic data
+
+# Smoke test: 1-epoch SRCNN on synthetic phantom data, no FastMRI required.
+python -m brainsr.cli.preprocess --build-sample --output-dir data/sample
+python -m brainsr.cli.train --config configs/e2_srcnn.yaml \
+    --override data.root=data/sample epochs=1 batch_size=2 output_dir=runs/_smoke
 exit
 ```
 

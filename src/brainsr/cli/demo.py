@@ -1,21 +1,18 @@
 """``brainsr-demo``: end-to-end inference demo on the held-out test split.
 
-This is the "single command" entry point for graders. It:
+The "single command" entry point for graders. For each experiment under
+``checkpoints/eN_*/`` it rebuilds the model from ``config.resolved.yaml``,
+loads ``best.pt``, evaluates on the test split, and writes a few sample
+LR/SR/HR triplet PNGs plus an aggregate ``runs/results.csv``.
 
-1. Ensures the preprocessed dataset is present (downloads it from Google
-   Drive via ``scripts/download_data.py`` on first run).
-2. Ensures the ``checkpoints/`` folder is populated (optionally downloads
-   it via ``scripts/download_model.py`` if missing).
-3. For every experiment found under ``checkpoints/eN_*/``, rebuilds the
-   model from its ``config.resolved.yaml``, loads ``best.pt``, evaluates
-   on the test split, and saves a few sample LR/SR/HR triplet PNGs.
-4. Aggregates per-experiment metrics into ``runs/results.csv`` and
-   prints a summary table.
+Preprocessed data is fetched on first run via ``scripts/download_data.py``
+(URL configured in ``.env``); checkpoints ship in the repo and are
+expected to already be present.
 
-Run directly::
+Examples::
 
     python -m brainsr.cli.demo
-    python -m brainsr.cli.demo --checkpoints-dir checkpoints --output-dir runs --num-samples 6
+    python -m brainsr.cli.demo --checkpoints-dir checkpoints --num-samples 6
 """
 
 from __future__ import annotations
@@ -57,33 +54,26 @@ def _ensure_data(processed_dir: Path) -> None:
     if not helper.exists():
         raise SystemExit(
             f"No processed data at {processed_dir} and no download helper found at {helper}.\n"
-            "Run `make preprocess` first, or place the preprocessed .npy cache at that path."
+            "Run `bash run.sh preprocess` first, or place the .npy cache at that path."
         )
     rc = _run_helper_script(helper, "--output-dir", str(processed_dir))
     if rc != 0 or not (processed_dir / "splits.json").exists():
         raise SystemExit(
             f"Failed to obtain processed data at {processed_dir}. "
-            "Set PROCESSED_DATA_URL in .env or run `make preprocess` manually."
+            "Set PROCESSED_DATA_URL in .env or run `bash run.sh preprocess`."
         )
 
 
 def _ensure_checkpoints(ckpt_dir: Path) -> None:
-    has_any = ckpt_dir.exists() and any(ckpt_dir.glob("*/config.resolved.yaml"))
-    if has_any:
+    if ckpt_dir.exists() and any(ckpt_dir.glob("*/config.resolved.yaml")):
         log.info("Checkpoints already present at %s", ckpt_dir)
         return
-    helper = REPO_ROOT / "scripts" / "download_model.py"
-    if not helper.exists():
-        raise SystemExit(
-            f"No checkpoints at {ckpt_dir} and no download helper found. "
-            "Train models first, or set CHECKPOINTS_URL in .env."
-        )
-    rc = _run_helper_script(helper, "--output-dir", str(ckpt_dir))
-    if rc != 0 or not any(ckpt_dir.glob("*/config.resolved.yaml")):
-        raise SystemExit(
-            f"Failed to obtain checkpoints at {ckpt_dir}. "
-            "Set CHECKPOINTS_URL in .env or train E1-E5 first."
-        )
+    raise SystemExit(
+        f"No checkpoints found at {ckpt_dir}.\n"
+        "The repo ships pre-trained weights under `checkpoints/eN_*/`. If you "
+        "cloned a stripped-down branch, either train E1-E5 with "
+        "`bash run.sh train-all` or restore the bundled checkpoints folder."
+    )
 
 
 def _build_model_from_cfg(cfg: dict[str, Any]) -> tuple[torch.nn.Module, int]:
@@ -175,12 +165,7 @@ def main() -> None:
     parser.add_argument(
         "--skip-data-download",
         action="store_true",
-        help="Don't try to fetch data from Google Drive even if data/processed is empty",
-    )
-    parser.add_argument(
-        "--skip-checkpoint-download",
-        action="store_true",
-        help="Don't try to fetch checkpoints from a remote URL even if checkpoints/ is empty",
+        help="Skip the data download step even if data/processed is empty",
     )
     args = parser.parse_args()
 
@@ -191,8 +176,7 @@ def main() -> None:
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    if not args.skip_checkpoint_download:
-        _ensure_checkpoints(ckpt_dir)
+    _ensure_checkpoints(ckpt_dir)
     if not args.skip_data_download:
         _ensure_data(data_dir)
 
@@ -228,7 +212,7 @@ def main() -> None:
         (per_run_dir / "summary.json").write_text(
             yaml.safe_dump({"test": metrics, "source": "demo"}, sort_keys=False)
         )
-        # Ship the resolved config alongside so brainsr-eval and brainsr-predict can find it.
+        # Ship the resolved config alongside so brainsr-eval can find it.
         cfg_src = exp_subdir / "config.resolved.yaml"
         cfg_dst = per_run_dir / "config.resolved.yaml"
         if cfg_src.exists() and not cfg_dst.exists():

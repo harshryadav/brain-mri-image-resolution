@@ -1,10 +1,13 @@
 """Attention-Gated U-Net for super-resolution.
 
-Clean PyTorch reimplementation of the architecture from Li et al. (2022),
-"Deep attention super-resolution of brain MRI acquired under clinical
-protocols". The network takes an LR input of shape ``(N, C, H/scale, W/scale)``,
-upsamples to ``(N, C, H, W)`` with a PixelShuffle head, then runs a 4-level
-encoder/decoder U-Net with optional additive attention gates on each skip.
+Clean PyTorch port of the architecture from Li et al. (2022), "Deep
+attention super-resolution of brain MRI acquired under clinical protocols"
+(Frontiers in Computational Neuroscience). LR input of shape
+``(N, C, H/scale, W/scale)`` is first lifted to HR size by a PixelShuffle
+head, then refined by a 4-level encoder/decoder U-Net with optional
+additive attention gates (Oktay et al. 2018) on each skip. We keep the
+paper's defaults: instance norm, leaky ReLU, depth=4, residual connection
+to a bicubic-upsampled copy of the input.
 """
 
 from __future__ import annotations

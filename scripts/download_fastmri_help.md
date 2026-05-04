@@ -29,9 +29,8 @@ it. Grab it yourself:
 6. Preprocess once to populate `data/processed/`:
 
    ```bash
-   make preprocess          # native
-   make docker-preprocess   # Docker
+   bash run.sh preprocess
    ```
 
-We only ever touch the `.npy` cache after that, so you can move or delete
-the raw `.h5` files once preprocessing finishes.
+We only touch the `.npy` cache after that, so you can move or delete the
+raw `.h5` files once preprocessing finishes.

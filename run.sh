@@ -1,21 +1,18 @@
 #!/usr/bin/env bash
-# Single entry point for the dockerized brain-MRI super-resolution project.
+# One entry point for everything dockerized in this project. The grader's path
+# is just `bash run.sh` -- which runs the inference demo over E1..E5.
 #
-# Usage:
-#   bash run.sh                 # default: inference demo (E1..E5 on test split)
-#   bash run.sh demo            # same as above (explicit)
-#   bash run.sh train [CONFIG]  # train one experiment (CONFIG defaults to E2)
-#   bash run.sh train-all       # train E1..E5 in sequence then aggregate
-#   bash run.sh preprocess      # convert raw FastMRI .h5 -> .npy cache
-#   bash run.sh smoke           # offline phantom sanity check (no downloads)
-#   bash run.sh shell           # drop into an interactive shell in the container
-#   bash run.sh tensorboard     # launch TB on http://localhost:6006
-#   bash run.sh test            # run pytest inside the container
+# Subcommands:
+#   demo         (default) eval bundled checkpoints on the test split
+#   train [CFG]  train one experiment (CFG defaults to E2 / SRCNN)
+#   train-all    train E1..E5 then aggregate to runs/results.csv
+#   preprocess   convert raw FastMRI .h5 -> .npy cache
+#   smoke        synthetic phantom sanity check, no downloads
+#   shell        interactive bash inside the container
+#   tensorboard  TB UI on http://localhost:6006
+#   test         pytest inside the container
 #
-# This script builds the Docker image on first invocation and reuses it
-# afterwards. Set BRAINSR_REBUILD=1 to force a rebuild.
-#
-# Designed to need zero arguments for the common "grader runs the demo" path.
+# Builds the image on first invocation; set BRAINSR_REBUILD=1 to force.
 
 set -euo pipefail
 
@@ -28,7 +25,7 @@ shift || true
 
 # `help` is a no-op meta command - don't require Docker just to print usage.
 if [[ "$cmd" == "help" || "$cmd" == "-h" || "$cmd" == "--help" ]]; then
-    sed -n '2,18p' "$0"
+    sed -n '2,16p' "$0"
     exit 0
 fi
 
@@ -44,9 +41,8 @@ if ! docker compose version >/dev/null 2>&1; then
     exit 1
 fi
 
-# Daemon health check. The CLI binaries above work without the daemon, but
-# `docker compose build` will silently hang at "[+] Building 0.0s (0/0)" if
-# the daemon isn't reachable. Fail loudly instead.
+# Without this check, `docker compose build` silently hangs at "Building 0.0s
+# (0/0)" when Docker Desktop isn't running. Fail loudly with a hint instead.
 if ! docker info >/dev/null 2>&1; then
     echo "ERROR: Cannot connect to the Docker daemon." >&2
     echo "  - On macOS / Windows: open the Docker Desktop app and wait for the" >&2
@@ -59,7 +55,7 @@ if ! docker info >/dev/null 2>&1; then
     exit 1
 fi
 
-# Make sure .env exists so docker compose's variable substitution works.
+# docker compose reads .env for variable substitution; create one if missing.
 if [[ ! -f .env ]]; then
     if [[ -f .env.example ]]; then
         cp .env.example .env
@@ -69,7 +65,7 @@ if [[ ! -f .env ]]; then
     fi
 fi
 
-# Build on first run, or if explicitly requested. We check by image presence.
+# First-run build (or BRAINSR_REBUILD=1 for an explicit rebuild).
 need_build=0
 if [[ "${BRAINSR_REBUILD:-0}" == "1" ]]; then
     need_build=1
@@ -80,6 +76,11 @@ if (( need_build )); then
     echo "==> Building Docker image ($IMAGE_NAME)..."
     docker compose build
 fi
+
+# One-epoch training run on synthetic phantom data. No FastMRI / network needed.
+SMOKE_CMD='python -m brainsr.cli.preprocess --build-sample --output-dir data/sample \
+    && python -m brainsr.cli.train --config configs/e2_srcnn.yaml \
+        --override data.root=data/sample epochs=1 batch_size=2 output_dir=runs/_smoke'
 
 case "$cmd" in
     demo|"")
@@ -102,7 +103,7 @@ case "$cmd" in
         ;;
     smoke)
         echo "==> Smoke test on synthetic phantom (no downloads)"
-        docker compose run --rm dev bash -lc "make smoke"
+        docker compose run --rm dev bash -lc "$SMOKE_CMD"
         ;;
     shell)
         docker compose run --rm dev bash

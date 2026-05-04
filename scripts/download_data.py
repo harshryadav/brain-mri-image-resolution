@@ -2,36 +2,17 @@
 
 Idempotent: no-op when ``data/processed/splits.json`` already exists.
 
-Supported sources, in order of recommendation:
+Supports any public HTTPS URL pointing at a ``.tar.gz`` / ``.tar`` /
+``.zip`` archive (Hugging Face Hub, GitHub Releases, Zenodo, ...) plus
+Google Drive *folder* URLs as a slow legacy fallback. Drive *file* URLs
+are explicitly unsupported - Google's virus-scan confirmation page and
+per-file quota make them unreliable for files >100MB.
 
-1. **Hugging Face Hub Datasets (recommended).** Free, no quota, designed
-   for exactly this. Public dataset URLs look like::
-
-       https://huggingface.co/datasets/<user>/<repo>/resolve/main/processed.tar.gz
-
-   The ``/blob/`` form (the page you see in your browser) is auto-rewritten
-   to ``/resolve/`` (the raw bytes endpoint). Both work.
-
-2. **GitHub Releases / Zenodo / any other public HTTPS URL** to a single
-   ``.tar.gz`` / ``.tar`` / ``.zip`` archive.
-
-3. **Google Drive folder URL** (e.g. ``https://drive.google.com/drive/folders/<id>``).
-   Slow (one HTTP request per file) and rate-limit-prone; only used if you
-   haven't migrated off Drive yet.
-
-After download, if ``splits.json`` is missing it's regenerated
-deterministically (seed=42, 70/20/10 by volume) from the .npy filenames so
-the demo can still run.
-
-**Why not Google Drive *files*?** For files >100MB Google forces a virus-scan
-confirmation page and aggressively rate-limits scripted access. Both
-``gdown`` and direct ``requests`` calls fail intermittently in practice.
-Pointing this script at a Drive *file* URL now produces an explanatory
-error rather than a confusing stack trace - host the tarball on HF or
-GitHub Releases instead.
+If the upload doesn't ship ``splits.json``, we regenerate one
+deterministically (seed=42, 70/20/10 by volume) from the .npy filenames.
 
 Configuration (priority order): ``--url`` flag > ``PROCESSED_DATA_URL``
-env var > ``DEFAULT_PROCESSED_DATA_URL`` constant in this file.
+env var > ``DEFAULT_PROCESSED_DATA_URL`` constant below.
 """
 
 from __future__ import annotations
@@ -48,16 +29,12 @@ from urllib.parse import urlparse
 
 log = logging.getLogger(__name__)
 
-# Hard-coded last-resort fallback. Used only when neither --url nor
-# PROCESSED_DATA_URL (env / .env) is set. Keeping the project's HF dataset
-# here means a fresh clone with a missing .env still works out of the box.
+# Last-resort fallback so a fresh clone with a missing .env still works.
 DEFAULT_PROCESSED_DATA_URL: str = (
     "https://huggingface.co/datasets/UMaryland/brain-mri-superresolution-group11"
     "/resolve/main/processed.tar.gz"
 )
 
-# Hosts whose URLs we treat as "single-archive HTTPS download". Anything not
-# matching the Drive-folder pattern lands here.
 _HF_HOSTS = ("huggingface.co", "hf.co")
 
 
@@ -78,11 +55,7 @@ def _is_gdrive_file(url: str) -> bool:
 
 
 def _normalize_url(url: str) -> str:
-    """Rewrite known web-page URLs into their raw-bytes equivalents.
-
-    Currently handles Hugging Face's ``/blob/`` (HTML page) -> ``/resolve/``
-    (raw download) substitution so users can paste either form.
-    """
+    """Rewrite Hugging Face ``/blob/`` (HTML page) -> ``/resolve/`` (raw bytes)."""
     parsed = urlparse(url)
     if parsed.netloc in _HF_HOSTS and "/blob/" in parsed.path:
         new_url = url.replace("/blob/", "/resolve/", 1)
@@ -92,11 +65,10 @@ def _normalize_url(url: str) -> str:
 
 
 def _download_https_archive(url: str, dest: Path) -> Path:
-    """Stream a public HTTPS URL to disk in 1 MB chunks.
+    """Stream a public HTTPS archive to disk in 1 MB chunks.
 
-    Works with Hugging Face Hub, GitHub Releases, Zenodo, and any plain
-    static file host. Fails loudly if we get HTML back (which usually means
-    the URL points at a web page rather than the raw bytes).
+    Fails loudly if we get HTML back, which usually means the URL points
+    at a web page rather than the raw download endpoint.
     """
     import requests
 
@@ -145,12 +117,11 @@ def _download_https_archive(url: str, dest: Path) -> Path:
 
 
 def _download_gdrive_folder(url: str, dest_dir: Path) -> None:
-    """Slow fallback: download every file from a Google Drive folder.
+    """Slow fallback: pull every file from a Drive *folder* via gdown.
 
-    Only used when ``PROCESSED_DATA_URL`` points at ``drive.google.com/.../folders/``.
-    For any new project, host the tarball on Hugging Face / GitHub Releases
-    instead - this path is here only so existing Drive folders keep working
-    without a re-upload.
+    Only invoked for ``drive.google.com/.../folders/`` URLs. Kept around
+    so existing Drive folders keep working without a re-upload; for new
+    setups host the tarball on HF / GitHub Releases instead.
     """
     try:
         import gdown
@@ -269,8 +240,7 @@ def main() -> None:
 
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Drive folders: slow, but functional. Direct fallback for users who
-    # haven't migrated to HF / GH Releases yet.
+    # Slow but functional fallback for users still on a Drive folder.
     if _is_gdrive_folder(url):
         if args.force:
             for child in out_dir.iterdir():
@@ -283,9 +253,8 @@ def main() -> None:
         log.info("Done. Processed data ready at %s", out_dir)
         return
 
-    # Drive *files* are explicitly unsupported - the virus-scan / quota wall
-    # makes them unreliable for the >100MB tarballs we ship. Fail with an
-    # actionable hint instead of pretending to work.
+    # Drive file URLs: the virus-scan + quota wall makes them too flaky for
+    # graders. Fail with an actionable hint rather than pretending to work.
     if _is_gdrive_file(url):
         sys.exit(
             "Google Drive *file* URLs aren't supported for the demo because Google's "
@@ -300,7 +269,7 @@ def main() -> None:
             "https://drive.google.com/drive/folders/<folder-id>"
         )
 
-    # Generic HTTPS path: HF, GitHub Releases, Zenodo, etc.
+    # Generic HTTPS path - HF, GitHub Releases, Zenodo, etc.
     scratch = out_dir.parent / "_download_scratch"
     if scratch.exists():
         shutil.rmtree(scratch)

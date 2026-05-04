@@ -1,7 +1,7 @@
 services:
-  # Default service for the grader's "single command" path. `bash run.sh`
-  # invokes this. Pulls preprocessed data on first run, then evaluates every
-  # bundled checkpoint and writes runs/results.csv + sample triplet PNGs.
+  # The "single command" path graders use. `bash run.sh` invokes this:
+  # pulls the preprocessed dataset on first run, evaluates every bundled
+  # checkpoint, and writes runs/results.csv + sample triplet PNGs.
   demo:
     build: .
     image: brainsr:latest
@@ -10,14 +10,13 @@ services:
     environment:
       - PYTHONPATH=/workspace/src
       - PROCESSED_DATA_URL=${PROCESSED_DATA_URL:-}
-      - CHECKPOINTS_URL=${CHECKPOINTS_URL:-}
       - BRAINSR_DEVICE=${BRAINSR_DEVICE:-}
     volumes:
       - ${PROCESSED_DIR:-./data/processed}:/workspace/data/processed
       - ${RUNS_DIR:-./runs}:/workspace/runs
       - ./checkpoints:/workspace/checkpoints
     entrypoint: ["python", "-m", "brainsr.cli.demo"]
-    # Uncomment for GPU. Requires the NVIDIA Container Toolkit on the host.
+    # Uncomment for GPU (requires NVIDIA Container Toolkit on the host).
     # deploy:
     #   resources:
     #     reservations:
@@ -26,7 +25,7 @@ services:
     #           count: all
     #           capabilities: [gpu]
 
-  # Long-lived dev environment. Bind-mounts source for live editing.
+  # Interactive dev shell. Bind-mounts source so edits show up live.
   dev:
     build: .
     image: brainsr:latest
@@ -35,7 +34,6 @@ services:
     environment:
       - PYTHONPATH=/workspace/src
       - PROCESSED_DATA_URL=${PROCESSED_DATA_URL:-}
-      - CHECKPOINTS_URL=${CHECKPOINTS_URL:-}
       - BRAINSR_DEVICE=${BRAINSR_DEVICE:-}
     volumes:
       - ${FASTMRI_DIR:-./data/raw}:/data/raw:ro
@@ -51,7 +49,7 @@ services:
     command: ["bash"]
     stdin_open: true
     tty: true
-    # Uncomment for GPU. See note above.
+    # Uncomment for GPU (see note above).
     # deploy:
     #   resources:
     #     reservations:
@@ -70,7 +68,7 @@ services:
     extends: dev
     container_name: brainsr-train
     entrypoint: ["python", "-m", "brainsr.cli.train"]
-    # Pass `--config configs/eN_*.yaml` via `docker compose run --rm train --config ...`
+    # Pass --config / --override via `docker compose run --rm train --config ...`
     command: []
 
   tensorboard:

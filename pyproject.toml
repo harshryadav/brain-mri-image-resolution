@@ -45,7 +45,6 @@ dev = [
 brainsr-preprocess = "brainsr.cli.preprocess:main"
 brainsr-train = "brainsr.cli.train:main"
 brainsr-eval = "brainsr.cli.eval:main"
-brainsr-predict = "brainsr.cli.predict:main"
 brainsr-demo = "brainsr.cli.demo:main"
 
 [tool.setuptools.packages.find]

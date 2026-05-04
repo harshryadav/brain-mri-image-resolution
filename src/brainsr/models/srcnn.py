@@ -1,7 +1,10 @@
-"""SRCNN (Dong et al., 2014): the classic 3-layer SR baseline.
+"""SRCNN: the classic 3-layer SR baseline from Dong et al. (2014).
 
-Expects its input to already be bicubic-upsampled to HR size. The trainer
-checks ``needs_bicubic_input`` and does that for us.
+Three named conv layers - patch extraction, non-linear mapping, then
+reconstruction - with the canonical (9, 5, 5) kernel sizes and (64, 32)
+channel widths from Section 3 of the paper. The model expects its input
+to already be bicubic-upsampled to HR size; the trainer does that for us
+when it sees ``needs_bicubic_input = True``.
 """
 
 from __future__ import annotations

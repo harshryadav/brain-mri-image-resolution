@@ -1,5 +1,5 @@
-# Use the official PyTorch CUDA runtime image. It works on CPU as well: just
-# omit `--gpus` when running. Pinned tag for reproducibility.
+# Pinned PyTorch + CUDA base for reproducibility. Runs CPU-only out of the
+# box (just omit --gpus); for GPU, see the deploy block in docker-compose.yml.
 FROM pytorch/pytorch:2.4.0-cuda12.1-cudnn9-runtime
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -8,6 +8,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
+# libgl1 + libglib are pulled in by matplotlib / PIL for headless rendering.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git \
         build-essential \
@@ -17,6 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /workspace
 
+# Install deps first so they get cached separately from source code edits.
 COPY requirements.txt ./
 RUN pip install -r requirements.txt
 
@@ -29,14 +31,12 @@ COPY scripts ./scripts
 COPY tests ./tests
 COPY checkpoints ./checkpoints
 COPY data/sample ./data/sample
-COPY Makefile ./Makefile
 
-# Create the runtime mount points that docker-compose binds to host folders.
+# Mount points the compose services bind to host paths.
 RUN mkdir -p /data/raw \
     /workspace/data/processed \
     /workspace/runs
 
-# Default behavior: run the inference demo end-to-end. Compose services
-# override this for the train/preprocess/dev paths.
+# Default: run the inference demo. Other compose services override this.
 ENTRYPOINT ["python", "-m", "brainsr.cli.demo"]
 CMD []
