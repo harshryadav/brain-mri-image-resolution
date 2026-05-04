@@ -30,7 +30,6 @@ COPY configs ./configs
 COPY scripts ./scripts
 COPY tests ./tests
 COPY checkpoints ./checkpoints
-COPY data/sample ./data/sample
 
 # Mount points the compose services bind to host paths.
 RUN mkdir -p /data/raw \

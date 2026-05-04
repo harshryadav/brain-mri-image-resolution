@@ -39,7 +39,6 @@ services:
       - ${FASTMRI_DIR:-./data/raw}:/data/raw:ro
       - ${PROCESSED_DIR:-./data/processed}:/workspace/data/processed
       - ${RUNS_DIR:-./runs}:/workspace/runs
-      - ./data/sample:/workspace/data/sample
       - ./checkpoints:/workspace/checkpoints
       - ./src:/workspace/src
       - ./configs:/workspace/configs

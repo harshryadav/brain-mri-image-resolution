@@ -1,12 +1,11 @@
 """Synthetic LR generation: Gaussian blur + bicubic downsampling.
 
-Implements the degradation pipeline described in our proposal (Section
-"Approach") and inspired by Real-ESRGAN's degradation model: HR -> blur
-with sigma sampled from ``sigma_range`` -> bicubic downsample by ``scale``
-(4x by default), giving an LR of size ``HR // scale``. Applied inside
-``__getitem__`` so a random sigma per sample doubles as augmentation in
-train mode; eval mode pins sigma to the midpoint for reproducible PSNR/
-SSIM.
+Inspired by the Real-ESRGAN degradation model (Wang et al. 2021):
+HR -> blur with sigma sampled from ``sigma_range`` -> bicubic downsample
+by ``scale`` (4x by default), giving an LR of size ``HR // scale``.
+Applied inside ``__getitem__`` so a random sigma per sample doubles as
+augmentation in train mode; eval mode pins sigma to the midpoint for
+reproducible PSNR/SSIM.
 """
 
 from __future__ import annotations
