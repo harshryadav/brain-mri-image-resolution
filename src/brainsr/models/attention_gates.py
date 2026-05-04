@@ -1,8 +1,9 @@
-"""Additive attention gate (Oktay et al., 2018) used on U-Net skip connections.
+"""Additive attention gate from Oktay et al. (2018), Attention U-Net.
 
-The gate takes a low-resolution gating signal ``g`` (from the decoder side)
-and a higher-resolution skip feature ``x`` (from the encoder), produces a
-soft attention map alpha in ``[0, 1]``, and returns ``x * alpha``.
+Sits on each U-Net skip connection. Takes a coarser gating signal ``g``
+from the decoder and a finer skip feature ``x`` from the encoder, mixes
+them via 1x1 convs + ReLU + sigmoid, and returns ``x * alpha`` -- so the
+decoder only sees the parts of the skip that the gate considers relevant.
 """
 
 from __future__ import annotations

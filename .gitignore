@@ -36,8 +36,14 @@ runs/
 *.pt
 *.pth
 *.npy
-!data/sample/**/*.npy
-!data/sample/**/*.json
+
+# Bundled inference checkpoints (small enough to ship in the repo / zip).
+!checkpoints/**/*.pt
+!checkpoints/**/*.pth
+!checkpoints/**/*.yaml
+!checkpoints/**/*.yml
+!checkpoints/**/*.json
+!checkpoints/**/*.md
 
 # Env
 .env

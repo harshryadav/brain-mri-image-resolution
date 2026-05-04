@@ -1,4 +1,31 @@
 services:
+  # The "single command" path graders use. `bash run.sh` invokes this:
+  # pulls the preprocessed dataset on first run, evaluates every bundled
+  # checkpoint, and writes runs/results.csv + sample triplet PNGs.
+  demo:
+    build: .
+    image: brainsr:latest
+    container_name: brainsr-demo
+    working_dir: /workspace
+    environment:
+      - PYTHONPATH=/workspace/src
+      - PROCESSED_DATA_URL=${PROCESSED_DATA_URL:-}
+      - BRAINSR_DEVICE=${BRAINSR_DEVICE:-}
+    volumes:
+      - ${PROCESSED_DIR:-./data/processed}:/workspace/data/processed
+      - ${RUNS_DIR:-./runs}:/workspace/runs
+      - ./checkpoints:/workspace/checkpoints
+    entrypoint: ["python", "-m", "brainsr.cli.demo"]
+    # Uncomment for GPU (requires NVIDIA Container Toolkit on the host).
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  # Interactive dev shell. Bind-mounts source so edits show up live.
   dev:
     build: .
     image: brainsr:latest
@@ -6,20 +33,22 @@ services:
     working_dir: /workspace
     environment:
       - PYTHONPATH=/workspace/src
+      - PROCESSED_DATA_URL=${PROCESSED_DATA_URL:-}
+      - BRAINSR_DEVICE=${BRAINSR_DEVICE:-}
     volumes:
       - ${FASTMRI_DIR:-./data/raw}:/data/raw:ro
       - ${PROCESSED_DIR:-./data/processed}:/workspace/data/processed
       - ${RUNS_DIR:-./runs}:/workspace/runs
-      - ./data/sample:/workspace/data/sample
+      - ./checkpoints:/workspace/checkpoints
       - ./src:/workspace/src
       - ./configs:/workspace/configs
       - ./scripts:/workspace/scripts
       - ./tests:/workspace/tests
-      - ./notebooks:/workspace/notebooks
+    entrypoint: []
+    command: ["bash"]
     stdin_open: true
     tty: true
-    # Uncomment the next block when running on a CUDA host with the NVIDIA
-    # Container Toolkit installed. Leave commented for CPU dev.
+    # Uncomment for GPU (see note above).
     # deploy:
     #   resources:
     #     reservations:
@@ -38,7 +67,8 @@ services:
     extends: dev
     container_name: brainsr-train
     entrypoint: ["python", "-m", "brainsr.cli.train"]
-    # pass `--config configs/eN_*.yaml` via `docker compose run --rm train --config ...`
+    # Pass --config / --override via `docker compose run --rm train --config ...`
+    command: []
 
   tensorboard:
     extends: dev

@@ -1,8 +1,10 @@
-"""DCGAN-style critic for the AGUNet generator.
+"""DCGAN-style critic for the AGUNet generator (E5).
 
-Stack of stride-2 convolutions (each halving spatial size), then a final
-conv that collapses to a single logit per image. Spectral norm is on by
-default for training stability.
+Architecture follows Radford et al. (2016): stride-2 convs that halve
+spatial size at each block, then a 4x4 head that collapses to a single
+logit per image. Spectral norm (Miyato et al. 2018) is on by default to
+keep adversarial training stable - without it, GAN-SR runs tend to spike
+the critic and collapse the generator within a few epochs.
 """
 
 from __future__ import annotations

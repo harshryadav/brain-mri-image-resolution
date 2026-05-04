@@ -1,17 +1,27 @@
-defaults: base.yaml
-
-output_dir: runs/e5_agunet_attn_dcgan
-
-epochs: 100
+seed: 42
 batch_size: 16
-lr: 1.0e-3
-
-critic_lr: 1.0e-4
+num_workers: 2
+epochs: 100
+lr: 0.001
+lr_step_size: 20
+lr_gamma: 0.5
+loss: mse
+mixed_precision: false
+log_every: 50
+save_plots_every: 5
+grad_clip: 0.0
+data:
+  root: data/processed
+  scale: 4
+  sigma_range:
+  - 0.5
+  - 2.0
+output_dir: runs/e5_agunet_attn_dcgan
+critic_lr: 0.0001
 critic_steps: 1
 critic_intensity: 0.2
 critic_kind: hinge
 label_smoothing: 0.1
-
 model:
   name: agunet
   in_channels: 1
@@ -23,7 +33,6 @@ model:
   dropout: 0.0
   use_attention: true
   residual: true
-
 critic:
   name: dcgan
   in_channels: 1

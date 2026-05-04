@@ -17,3 +17,7 @@ runs
 notebooks/.ipynb_checkpoints
 .idea
 .vscode
+
+# Make sure bundled inference checkpoints DO get into the image.
+!checkpoints/
+!checkpoints/**

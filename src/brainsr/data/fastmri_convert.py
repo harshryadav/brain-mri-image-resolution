@@ -1,15 +1,17 @@
 """FastMRI ``.h5`` k-space -> per-slice ``.npy`` magnitude images.
 
-For each volume we IFFT each coil, root-sum-of-squares across coils,
-center-crop to a square FOV, bicubic-resize to a fixed resolution, and
-normalize by the 99th percentile so values land in roughly ``[0, 1]``.
-Slices are saved as ``{volume_id}_slice{idx:03d}.npy`` and treated as
-independent samples downstream.
+The FastMRI-standard reconstruction pipeline (Zbontar et al. 2018): for
+each volume we IFFT each coil, take root-sum-of-squares across coils,
+center-crop to a square FOV, bicubic-resize to 256x256, and normalize by
+the 99th percentile so intensities land roughly in ``[0, 1]``. Slices are
+written as ``{volume_id}_slice{idx:03d}.npy`` and treated as independent
+samples downstream.
 
-Caveat: the public ``multicoil_test`` batches are 8x undersampled with no
-fully-sampled ground truth, so the IFFT+RSS image we treat as "HR" here is a
-zero-filled aliased reconstruction. See the project README for what that
-means for the metrics.
+Caveat for the public ``multicoil_test`` batches: they're 8x undersampled
+with no fully-sampled ground truth, so what we call "HR" here is actually
+a zero-filled aliased reconstruction. The fully-sampled
+``multicoil_train`` partition gives a true reference and is what the
+shipped checkpoints are trained on.
 """
 
 from __future__ import annotations

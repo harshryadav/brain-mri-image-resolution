@@ -1,4 +1,9 @@
-"""Reconstruction (MSE/L1) and adversarial (BCE/hinge) losses."""
+"""Reconstruction (MSE/L1) and adversarial (BCE/hinge) losses.
+
+Two adversarial flavors are supported: vanilla BCE-with-logits (the
+standard DCGAN setup) and hinge loss (Lim & Ye 2017 / SAGAN), which
+trains more stably with spectral norm. E5 uses hinge by default.
+"""
 
 from __future__ import annotations
 
@@ -19,7 +24,7 @@ def reconstruction_loss(name: str) -> nn.Module:
 
 
 class AdversarialLoss(nn.Module):
-    """Wraps BCE-with-logits or hinge loss for both critic and generator updates."""
+    """Critic + generator adversarial loss; ``kind`` picks BCE or hinge."""
 
     def __init__(self, kind: str = "bce", label_smoothing: float = 0.0) -> None:
         super().__init__()

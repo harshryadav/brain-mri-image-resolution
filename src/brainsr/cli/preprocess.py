@@ -3,8 +3,8 @@
 Two modes:
 
 - ``--input-dir <dir>`` (repeatable): convert every ``.h5`` under those dirs.
-- ``--build-sample``: synthesize a tiny phantom dataset for ``make smoke`` /
-  CI (no FastMRI required).
+- ``--build-sample``: synthesize a tiny phantom dataset for the smoke test
+  / CI (no FastMRI required).
 
 Optional filters: ``--acquisition AXT2,AXFLAIR`` to subset by FastMRI brain
 contrast; ``--limit N`` to cap volume count for quick iteration.
