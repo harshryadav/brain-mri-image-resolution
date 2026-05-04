@@ -8,8 +8,8 @@ lr: 1.0e-3
 
 critic_lr: 1.0e-4
 critic_steps: 1
-critic_intensity: 0.1
-critic_kind: bce
+critic_intensity: 0.2
+critic_kind: hinge
 label_smoothing: 0.1
 
 model:
@@ -29,5 +29,5 @@ critic:
   in_channels: 1
   num_filters: 16
   num_blocks: 4
-  dropout: 0.0
+  dropout: 0.5
   use_spectral_norm: true
