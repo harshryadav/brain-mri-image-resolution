@@ -37,50 +37,43 @@ alongside the code.
 
 ## Results so far
 
-20-epoch runs on the three combined `multicoil_test` batches
+60-epoch runs on the three combined `multicoil_test` batches
 (558 volumes, 6,620 slices, 70/20/10 split, MPS):
 
 | Exp | Model                          | Test PSNR | Δ vs E1 | Test SSIM | Test NRMSE |
 | --- | ------------------------------ | --------- | ------- | --------- | ---------- |
-| E1  | Bicubic                        | 30.286    | --      | 0.886     | 0.0816     |
-| E2  | SRCNN                          | 32.830    | +2.54   | 0.911     | 0.0609     |
-| E3  | AGUNet (MSE only)              | **34.327**| **+4.04**| **0.920**| **0.0513** |
-| E4  | AGUNet + attention             | 34.205    | +3.92   | 0.919     | 0.0520     |
-| E5  | AGUNet + attention + critic    | 34.116    | +3.83   | 0.918     | 0.0525     |
+| E1  | Bicubic                        | 25.209    | --      | 0.8420    | 0.1648     |
+| E2  | SRCNN                          | 27.823    | +2.61   | 0.8802    | 0.1220     |
+| E3  | AGUNet (MSE only)              | 29.640    | +4.43   | 0.8976    | 0.0990     |
+| E4  | AGUNet + attention             | 29.723    | +4.51   | 0.8994    | 0.0980     |
+| **E5**  | **AGUNet + attention + critic**    | **29.812**    | **+4.60**   | **0.8976**    | **0.0970**     |
 
-All proposal targets met. E3-E5 numbers are expected to shift with
-longer training (the proposal/paper used 100 epochs); we plan to re-run on
-GPU on UMD Zaratan (see [`scripts/zaratan/`](scripts/zaratan/README.md)).
+PSNR target met across all deep models (≥ bicubic + 2 dB). SSIM reached 0.899
+(proposal target: > 0.90) — expected to cross with 100-epoch GPU runs on
+Zaratan. **E5 is the final submitted model**; E1–E4 are ablation baselines
+included for comparison (see [`scripts/zaratan/`](scripts/zaratan/README.md)).
 
-## Quick start (one command, Docker)
+## Quick start
 
-This is the path your grader / professor / anyone-on-a-fresh-machine takes:
-
-1. **Unzip** the submission (or `git clone` the repo) and `cd` into it.
-2. **Install Docker Desktop** if you don't already have it
-   (<https://docs.docker.com/get-docker/>). Make sure `docker compose version`
-   prints a v2 string.
-3. **(Optional)** `cp .env.example .env` and paste in your
-   `PROCESSED_DATA_URL` (Google Drive shareable link to the preprocessed
-   tarball). The shipped `.env.example` has placeholder URLs you can edit.
-   `bash run.sh` will create `.env` from the example automatically if you
-   skip this step.
-4. **Run the demo:**
+1. **Clone:** `git clone https://github.com/Deepikag8/brain-mri-superresolution-group11 && cd brain-mri-superresolution-group11`
+2. **Install Docker Desktop** (skip if already installed): <https://docs.docker.com/get-docker/>
+3. **Run:**
 
    ```bash
    bash run.sh
    ```
 
-That single command:
+That's it. The script builds the image (first time ~5 min), downloads the
+data (~1.2 GB, first run only), runs all experiments E1–E5, and prints
+PSNR / SSIM / NRMSE. **E5 (AGUNet + attention + GAN) is the final submitted model.**
 
-- Builds the Docker image (first time only, ~5 minutes).
-- Downloads the preprocessed FastMRI test cache from Google Drive into
-  `data/processed/` (first time only, ~1.7 GB; cached locally afterwards).
-- Loads each bundled checkpoint under `checkpoints/eN_*/`, evaluates it on
-  the held-out test split, and writes:
-  - `runs/results.csv` - PSNR / SSIM / NRMSE for every experiment.
-  - `runs/<exp>/samples/*.png` - side-by-side **LR | SR | HR** panels.
-  - `runs/<exp>/summary.json` - per-experiment metrics.
+Outputs written to:
+- `runs/results.csv` — PSNR / SSIM / NRMSE for every experiment
+- `runs/<exp>/samples/*.png` — side-by-side **LR | SR | HR** panels
+
+> **Data** is hosted on Hugging Face and downloads automatically on first run.
+> If auto-download fails, get it manually:
+> <https://huggingface.co/datasets/UMaryland/brain-mri-superresolution-group11>
 
 CPU works out of the box. For GPU, uncomment the `deploy.resources` block
 in [`docker-compose.yml`](docker-compose.yml) (requires NVIDIA Container
@@ -251,7 +244,7 @@ git clone <this repo> ~/brain-mri-image-resolution
 cd ~/brain-mri-image-resolution
 bash scripts/zaratan/setup_env.sh
 
-# On your Mac (one-time, ~1.7 GB; raw .h5 stay local):
+# On your Mac (one-time, ~1.2 GB; raw .h5 stay local):
 rsync -avh data/processed/ <id>@login.zaratan.umd.edu:~/brain-mri-image-resolution/data/processed/
 
 # On Zaratan: run all 5 experiments on a GPU node
@@ -316,7 +309,7 @@ on first run.
 
 ### Hosting the preprocessed dataset (one-time, by you)
 
-The 1.7 GB preprocessed cache is too large to bundle in the zip and (per
+The 1.2 GB preprocessed cache is too large to bundle in the zip and (per
 FastMRI's data-use agreement) can't be redistributed alongside the code.
 The demo expects to fetch it on first run from a URL you set in
 `PROCESSED_DATA_URL`. Pick whichever host you prefer:

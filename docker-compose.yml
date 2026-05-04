@@ -9,7 +9,7 @@ services:
     working_dir: /workspace
     environment:
       - PYTHONPATH=/workspace/src
-      - PROCESSED_DATA_URL=${PROCESSED_DATA_URL:-}
+      - PROCESSED_DATA_URL=${PROCESSED_DATA_URL:-https://huggingface.co/datasets/UMaryland/brain-mri-superresolution-group11/resolve/main/processed.tar.gz}
       - CHECKPOINTS_URL=${CHECKPOINTS_URL:-}
       - BRAINSR_DEVICE=${BRAINSR_DEVICE:-}
     volumes:
@@ -34,7 +34,7 @@ services:
     working_dir: /workspace
     environment:
       - PYTHONPATH=/workspace/src
-      - PROCESSED_DATA_URL=${PROCESSED_DATA_URL:-}
+      - PROCESSED_DATA_URL=${PROCESSED_DATA_URL:-https://huggingface.co/datasets/UMaryland/brain-mri-superresolution-group11/resolve/main/processed.tar.gz}
       - CHECKPOINTS_URL=${CHECKPOINTS_URL:-}
       - BRAINSR_DEVICE=${BRAINSR_DEVICE:-}
     volumes:
