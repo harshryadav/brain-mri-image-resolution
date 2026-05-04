@@ -1,0 +1,30 @@
+seed: 42
+batch_size: 16
+num_workers: 2
+epochs: 60
+lr: 0.001
+lr_step_size: 20
+lr_gamma: 0.5
+loss: mse
+mixed_precision: false
+log_every: 50
+save_plots_every: 5
+grad_clip: 0.0
+data:
+  root: data/processed
+  scale: 4
+  sigma_range:
+  - 0.5
+  - 2.0
+output_dir: runs/e4_agunet_attn
+model:
+  name: agunet
+  in_channels: 1
+  out_channels: 1
+  num_filters: 16
+  depth: 4
+  normalization: instancenorm
+  activation: leakyrelu
+  dropout: 0.0
+  use_attention: true
+  residual: true
