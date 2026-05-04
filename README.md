@@ -314,6 +314,51 @@ If `checkpoints/` is missing entirely (e.g. you cloned a stripped-down
 branch), set `CHECKPOINTS_URL` in `.env` and the demo will pull a tarball
 on first run.
 
+### Hosting the preprocessed dataset (one-time, by you)
+
+The 1.7 GB preprocessed cache is too large to bundle in the zip and (per
+FastMRI's data-use agreement) can't be redistributed alongside the code.
+The demo expects to fetch it on first run from a URL you set in
+`PROCESSED_DATA_URL`. Pick whichever host you prefer:
+
+**Hugging Face Hub Datasets (recommended).** Free, no quota, fast,
+exactly what your professor recommended for ML artifacts. ~10 minutes
+one-time:
+
+```bash
+# 1. Create the tarball (run on whichever machine has data/processed/ ready)
+tar czf processed.tar.gz -C data processed/
+
+# 2. Install the CLI and log in (uses a free HF account + access token)
+pip install huggingface_hub
+huggingface-cli login   # paste a write-token from https://huggingface.co/settings/tokens
+
+# 3. Create a public dataset repo and upload the tarball
+huggingface-cli repo create brain-mri-processed --type dataset
+huggingface-cli upload <your-username>/brain-mri-processed processed.tar.gz \
+    processed.tar.gz --repo-type dataset
+
+# 4. Set the URL in .env.example so it ships with the submission
+#    (note: /resolve/main/ is the raw-bytes endpoint; /blob/main/ also works
+#    and is auto-rewritten by the downloader)
+PROCESSED_DATA_URL=https://huggingface.co/datasets/<your-username>/brain-mri-processed/resolve/main/processed.tar.gz
+```
+
+**GitHub Releases (alternative).** Easiest if you already use GitHub. The
+2 GB per-file limit fits your tarball with margin.
+
+1. `tar czf processed.tar.gz -C data processed/`
+2. On your repo's GitHub page: *Releases* -> *Draft a new release* ->
+   tag it `v1.0-data` -> drag-and-drop `processed.tar.gz` into the
+   "Assets" panel -> *Publish release*.
+3. Right-click the asset link in the published release page -> *Copy link*.
+4. `PROCESSED_DATA_URL=https://github.com/<user>/<repo>/releases/download/v1.0-data/processed.tar.gz`.
+
+**Why not Google Drive for the file?** For files >100 MB, Drive shows a
+"can't scan for viruses" confirmation page that breaks `gdown` and is
+rate-limited per file. The downloader will refuse a Drive file URL and
+print this advice. Drive *folder* URLs still work as a slow fallback.
+
 ## Architecture overview
 
 ```

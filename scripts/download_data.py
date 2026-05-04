@@ -1,23 +1,34 @@
 """Fetch the preprocessed FastMRI dataset from a configurable URL.
 
-Designed for the demo flow: idempotent (no-op when ``data/processed/splits.json``
-already exists). Supports three remote layouts, in order of preference:
+Idempotent: no-op when ``data/processed/splits.json`` already exists.
 
-1. **Single ``.tar.gz`` / ``.tar`` / ``.zip``** on Google Drive or HTTPS
-   (recommended; one fast request, no per-file rate limits). When
-   extracted, the archive should contain a ``processed/`` directory with
-   the ``.npy`` slices and ``splits.json`` at its root - matching the
-   layout ``brainsr-preprocess`` produces locally. A flat archive
-   (no ``processed/`` wrapper) also works.
-2. **Google Drive folder URL** (e.g. ``https://drive.google.com/drive/folders/<id>``).
-   Falls back to ``gdown.download_folder`` which downloads each file
-   individually. Slower and more rate-limit-prone, but works without
-   re-uploading anything.
-3. **Plain HTTPS URL to a single archive** - same as (1) over HTTP.
+Supported sources, in order of recommendation:
 
-If ``splits.json`` is missing after the download, we regenerate it
-deterministically (seed=42, 70/20/10) from the .npy filenames so the
-demo can still run.
+1. **Hugging Face Hub Datasets (recommended).** Free, no quota, designed
+   for exactly this. Public dataset URLs look like::
+
+       https://huggingface.co/datasets/<user>/<repo>/resolve/main/processed.tar.gz
+
+   The ``/blob/`` form (the page you see in your browser) is auto-rewritten
+   to ``/resolve/`` (the raw bytes endpoint). Both work.
+
+2. **GitHub Releases / Zenodo / any other public HTTPS URL** to a single
+   ``.tar.gz`` / ``.tar`` / ``.zip`` archive.
+
+3. **Google Drive folder URL** (e.g. ``https://drive.google.com/drive/folders/<id>``).
+   Slow (one HTTP request per file) and rate-limit-prone; only used if you
+   haven't migrated off Drive yet.
+
+After download, if ``splits.json`` is missing it's regenerated
+deterministically (seed=42, 70/20/10 by volume) from the .npy filenames so
+the demo can still run.
+
+**Why not Google Drive *files*?** For files >100MB Google forces a virus-scan
+confirmation page and aggressively rate-limits scripted access. Both
+``gdown`` and direct ``requests`` calls fail intermittently in practice.
+Pointing this script at a Drive *file* URL now produces an explanatory
+error rather than a confusing stack trace - host the tarball on HF or
+GitHub Releases instead.
 
 Configuration (priority order): ``--url`` flag > ``PROCESSED_DATA_URL``
 env var > ``DEFAULT_PROCESSED_DATA_URL`` constant in this file.
@@ -28,166 +39,139 @@ from __future__ import annotations
 import argparse
 import logging
 import os
-import re
 import shutil
 import sys
 import tarfile
 import zipfile
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 
 log = logging.getLogger(__name__)
 
-# Replace this with your actual Google Drive share URL or file ID once the
-# preprocessed tarball is uploaded. Until then, set PROCESSED_DATA_URL in .env.
-DEFAULT_PROCESSED_DATA_URL: str = ""
+# Hard-coded last-resort fallback. Used only when neither --url nor
+# PROCESSED_DATA_URL (env / .env) is set. Keeping the project's HF dataset
+# here means a fresh clone with a missing .env still works out of the box.
+DEFAULT_PROCESSED_DATA_URL: str = (
+    "https://huggingface.co/datasets/UMaryland/brain-mri-superresolution-group11"
+    "/resolve/main/processed.tar.gz"
+)
+
+# Hosts whose URLs we treat as "single-archive HTTPS download". Anything not
+# matching the Drive-folder pattern lands here.
+_HF_HOSTS = ("huggingface.co", "hf.co")
 
 
 def _is_gdrive_folder(url: str) -> bool:
-    """True if the URL points at a Google Drive *folder* (vs a single file)."""
+    if not url:
+        return False
+    parsed = urlparse(url)
+    return "drive.google.com" in parsed.netloc and "/folders/" in parsed.path
+
+
+def _is_gdrive_file(url: str) -> bool:
     if not url:
         return False
     parsed = urlparse(url)
     if "drive.google.com" not in parsed.netloc:
         return False
-    return "/folders/" in parsed.path
+    return "/file/" in parsed.path or "id=" in parsed.query
 
 
-def _parse_gdrive_id(url: str) -> str | None:
-    """Extract a Google Drive *file* ID from any of the common URL shapes.
+def _normalize_url(url: str) -> str:
+    """Rewrite known web-page URLs into their raw-bytes equivalents.
 
-    Returns None for folder URLs (use :func:`_is_gdrive_folder` for those).
+    Currently handles Hugging Face's ``/blob/`` (HTML page) -> ``/resolve/``
+    (raw download) substitution so users can paste either form.
     """
-    if not url:
-        return None
-    if re.fullmatch(r"[A-Za-z0-9_-]{20,}", url):
-        return url
     parsed = urlparse(url)
-    if "drive.google.com" not in parsed.netloc:
-        return None
-    if "/folders/" in parsed.path:
-        return None
-    m = re.search(r"/file/d/([A-Za-z0-9_-]+)", parsed.path)
-    if m:
-        return m.group(1)
-    qs = parse_qs(parsed.query)
-    if "id" in qs and qs["id"]:
-        return qs["id"][0]
-    return None
+    if parsed.netloc in _HF_HOSTS and "/blob/" in parsed.path:
+        new_url = url.replace("/blob/", "/resolve/", 1)
+        log.info("Rewrote Hugging Face URL %s -> %s", url, new_url)
+        return new_url
+    return url
+
+
+def _download_https_archive(url: str, dest: Path) -> Path:
+    """Stream a public HTTPS URL to disk in 1 MB chunks.
+
+    Works with Hugging Face Hub, GitHub Releases, Zenodo, and any plain
+    static file host. Fails loudly if we get HTML back (which usually means
+    the URL points at a web page rather than the raw bytes).
+    """
+    import requests
+
+    log.info("Downloading: %s -> %s", url, dest)
+    headers = {"User-Agent": "brainsr-demo/1.0 (+https://github.com/)"}
+    with requests.get(url, headers=headers, stream=True, allow_redirects=True, timeout=120) as r:
+        r.raise_for_status()
+        ctype = r.headers.get("Content-Type", "")
+        if ctype.startswith("text/html"):
+            preview = r.text[:400].replace("\n", " ")
+            raise SystemExit(
+                "Got HTML instead of file bytes from the download URL.\n"
+                f"  URL: {url}\n"
+                f"  Content-Type: {ctype}\n"
+                f"  Body preview: {preview!r}\n"
+                "If this is a Hugging Face URL, make sure it's the /resolve/ "
+                "form (not /blob/), and that the dataset repo is public. "
+                "If it's a GitHub Releases URL, paste the asset's *download* URL."
+            )
+        total_bytes = int(r.headers.get("Content-Length") or 0)
+        if total_bytes:
+            log.info("Expected size: %.1f MB", total_bytes / (1024 * 1024))
+        downloaded = 0
+        next_log = 50 * 1024 * 1024  # log every ~50 MB
+        with dest.open("wb") as f:
+            for chunk in r.iter_content(chunk_size=1024 * 1024):
+                if not chunk:
+                    continue
+                f.write(chunk)
+                downloaded += len(chunk)
+                if downloaded >= next_log:
+                    if total_bytes:
+                        log.info(
+                            "Downloaded %.1f / %.1f MB (%.0f%%)",
+                            downloaded / (1024 * 1024),
+                            total_bytes / (1024 * 1024),
+                            100 * downloaded / total_bytes,
+                        )
+                    else:
+                        log.info("Downloaded %.1f MB", downloaded / (1024 * 1024))
+                    next_log += 50 * 1024 * 1024
+    log.info("Saved %.1f MB to %s", downloaded / (1024 * 1024), dest)
+    if not dest.exists() or dest.stat().st_size == 0:
+        raise SystemExit(f"Empty file at {dest} after download.")
+    return dest
 
 
 def _download_gdrive_folder(url: str, dest_dir: Path) -> None:
-    """Download every file from a Google Drive folder URL into ``dest_dir``."""
+    """Slow fallback: download every file from a Google Drive folder.
+
+    Only used when ``PROCESSED_DATA_URL`` points at ``drive.google.com/.../folders/``.
+    For any new project, host the tarball on Hugging Face / GitHub Releases
+    instead - this path is here only so existing Drive folders keep working
+    without a re-upload.
+    """
     try:
         import gdown
     except ImportError as e:
         raise SystemExit(
-            "gdown is required for Google Drive downloads. Install with `pip install gdown`."
+            "gdown is required for Google Drive folder downloads. "
+            "Install with `pip install gdown`."
         ) from e
     log.warning(
-        "Downloading Google Drive *folder* via gdown - this is slow and prone to "
-        "rate-limit errors with many files. Prefer uploading a single .tar.gz."
+        "Downloading a Google Drive *folder* via gdown - this is slow and "
+        "prone to rate limits with many files. For a robust demo, host the "
+        "tarball on Hugging Face Hub instead and update PROCESSED_DATA_URL."
     )
     dest_dir.mkdir(parents=True, exist_ok=True)
     log.info("gdown.download_folder: %s -> %s", url, dest_dir)
-    # Keep the call to widely-supported kwargs only.
     gdown.download_folder(url=url, output=str(dest_dir), quiet=False)
     if not any(dest_dir.iterdir()):
         raise SystemExit(
             f"gdown produced no files at {dest_dir}. "
-            "Confirm the folder is shared with 'Anyone with the link' and try again."
+            "Confirm the folder is shared with 'Anyone with the link'."
         )
-
-
-def _download_drive_file_direct(file_id: str, dest: Path) -> Path:
-    """Direct streaming download from Google Drive that bypasses the virus-scan UI.
-
-    Uses the `drive.usercontent.google.com/download?confirm=t` endpoint, which
-    serves the file directly for any item shared as "Anyone with the link" -
-    including files >100 MB where the regular UI would show a confirmation page
-    (the page that ``gdown``'s HTML scraper periodically breaks on).
-    """
-    import requests  # bundled with gdown, always present in the image.
-
-    url = "https://drive.usercontent.google.com/download"
-    params = {"id": file_id, "export": "download", "confirm": "t"}
-    log.info("Downloading via direct Drive endpoint: id=%s -> %s", file_id, dest)
-
-    with requests.get(url, params=params, stream=True, allow_redirects=True, timeout=120) as r:
-        r.raise_for_status()
-        ctype = r.headers.get("Content-Type", "")
-        # If we got HTML back, the file isn't truly public, the daily quota is
-        # exhausted, or the URL endpoint changed shape. Fail loud with context.
-        if ctype.startswith("text/html"):
-            preview = r.text[:400].replace("\n", " ")
-            raise SystemExit(
-                "Got HTML instead of file bytes from Google Drive.\n"
-                f"  Content-Type: {ctype}\n"
-                f"  Body preview: {preview!r}\n"
-                "Likely causes: file isn't truly shared with 'Anyone with the link', "
-                "the daily download quota for that file was exceeded (wait 24h or use "
-                "a different account), or you need a fresh share link."
-            )
-        total = 0
-        with dest.open("wb") as f:
-            for chunk in r.iter_content(chunk_size=1024 * 1024):  # 1 MB
-                if chunk:
-                    f.write(chunk)
-                    total += len(chunk)
-    log.info("Downloaded %.1f MB to %s", total / (1024 * 1024), dest)
-    if not dest.exists() or dest.stat().st_size == 0:
-        raise SystemExit(f"Empty file at {dest} after direct download.")
-    return dest
-
-
-def _download_from_gdrive(file_id: str, dest: Path) -> Path:
-    """Pull a Drive file by ID, with a robust fallback for large/quota'd files.
-
-    Strategy:
-      1. Try ``gdown`` (handles small files and refresh-token cases cleanly).
-      2. On any failure - including the common ``FileURLRetrievalError`` for
-         large public files where Google changed their warning page - fall
-         back to a direct ``requests`` stream against the
-         ``drive.usercontent.google.com`` endpoint, which serves the bytes
-         without needing HTML scraping.
-    """
-    try:
-        import gdown
-    except ImportError as e:
-        raise SystemExit(
-            "gdown is required for Google Drive downloads. Install with `pip install gdown`."
-        ) from e
-
-    log.info("Downloading via gdown: id=%s -> %s", file_id, dest)
-    try:
-        # Minimal, version-stable kwargs (no `fuzzy`/`use_cookies` - those drift).
-        gdown.download(id=file_id, output=str(dest), quiet=False)
-    except TypeError:
-        # Older gdown (<4.4) doesn't accept the `id` kwarg.
-        try:
-            gdown.download(f"https://drive.google.com/uc?id={file_id}", str(dest), quiet=False)
-        except Exception as e:
-            log.warning("gdown URL fallback failed (%s); trying direct endpoint", e)
-            return _download_drive_file_direct(file_id, dest)
-    except Exception as e:
-        # The common case: gdown raises FileURLRetrievalError for large public
-        # files because its HTML parser broke. The direct endpoint sidesteps it.
-        log.warning("gdown failed (%s); trying direct Drive endpoint", e)
-        return _download_drive_file_direct(file_id, dest)
-
-    if not dest.exists() or dest.stat().st_size == 0:
-        log.warning("gdown produced an empty file at %s; trying direct endpoint", dest)
-        return _download_drive_file_direct(file_id, dest)
-    return dest
-
-
-def _download_http(url: str, dest: Path) -> Path:
-    import urllib.request
-
-    log.info("Downloading via HTTP: %s -> %s", url, dest)
-    with urllib.request.urlopen(url) as resp, dest.open("wb") as out:
-        shutil.copyfileobj(resp, out)
-    return dest
 
 
 def _extract(archive: Path, target: Path) -> None:
@@ -244,7 +228,6 @@ def _ensure_splits(processed_dir: Path) -> None:
         "splits.json not present; regenerating deterministic 70/20/10 split (seed=42) "
         "over %d .npy slices.", n_npy,
     )
-    # Lazy import so the script stays runnable without the brainsr package installed.
     repo_root = Path(__file__).resolve().parents[1]
     sys.path.insert(0, str(repo_root / "src"))
     from brainsr.data.splits import build_splits  # type: ignore  # noqa: E402
@@ -253,9 +236,18 @@ def _ensure_splits(processed_dir: Path) -> None:
     log.info("Wrote %s", splits_path)
 
 
+def _archive_suffix_for(url: str) -> str:
+    """Pick a sensible filename suffix from the URL so the extractor works."""
+    path = urlparse(url).path
+    for ext in (".tar.gz", ".tgz", ".tar", ".zip"):
+        if path.lower().endswith(ext):
+            return ext
+    return ".tar.gz"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Download preprocessed FastMRI cache")
-    parser.add_argument("--url", type=str, default=None, help="Override the data URL or Google Drive file ID")
+    parser.add_argument("--url", type=str, default=None, help="Override PROCESSED_DATA_URL")
     parser.add_argument("--output-dir", type=str, default="data/processed")
     parser.add_argument("--force", action="store_true", help="Re-download even if data is already present")
     args = parser.parse_args()
@@ -273,12 +265,14 @@ def main() -> None:
             "No data URL configured. Set PROCESSED_DATA_URL in .env, pass --url, "
             "or edit DEFAULT_PROCESSED_DATA_URL in scripts/download_data.py."
         )
+    url = _normalize_url(url)
 
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # Drive folders: slow, but functional. Direct fallback for users who
+    # haven't migrated to HF / GH Releases yet.
     if _is_gdrive_folder(url):
-        # Folder mode: gdown writes files directly into the target.
-        if args.force and out_dir.exists():
+        if args.force:
             for child in out_dir.iterdir():
                 if child.is_dir():
                     shutil.rmtree(child)
@@ -289,20 +283,31 @@ def main() -> None:
         log.info("Done. Processed data ready at %s", out_dir)
         return
 
-    # Single-archive mode (Drive file or plain HTTPS).
+    # Drive *files* are explicitly unsupported - the virus-scan / quota wall
+    # makes them unreliable for the >100MB tarballs we ship. Fail with an
+    # actionable hint instead of pretending to work.
+    if _is_gdrive_file(url):
+        sys.exit(
+            "Google Drive *file* URLs aren't supported for the demo because Google's "
+            "virus-scan confirmation page and per-file quota make large downloads "
+            "fail intermittently for graders.\n\n"
+            "Recommended fix: re-host the tarball on Hugging Face Hub (free, no quota):\n"
+            "  1. pip install huggingface_hub\n"
+            "  2. huggingface-cli login\n"
+            "  3. huggingface-cli upload <user>/<repo> processed.tar.gz . --repo-type=dataset\n"
+            "  4. Set PROCESSED_DATA_URL=https://huggingface.co/datasets/<user>/<repo>/resolve/main/processed.tar.gz\n\n"
+            "Or use a Drive *folder* URL (slower but works): "
+            "https://drive.google.com/drive/folders/<folder-id>"
+        )
+
+    # Generic HTTPS path: HF, GitHub Releases, Zenodo, etc.
     scratch = out_dir.parent / "_download_scratch"
     if scratch.exists():
         shutil.rmtree(scratch)
     scratch.mkdir(parents=True, exist_ok=True)
 
-    gdrive_id = _parse_gdrive_id(url)
-    if gdrive_id:
-        archive = scratch / "processed.tar.gz"
-        _download_from_gdrive(gdrive_id, archive)
-    else:
-        suffix = Path(urlparse(url).path).suffix or ".tar.gz"
-        archive = scratch / f"processed{suffix}"
-        _download_http(url, archive)
+    archive = scratch / f"processed{_archive_suffix_for(url)}"
+    _download_https_archive(url, archive)
 
     extract_target = scratch / "extracted"
     _extract(archive, extract_target)
