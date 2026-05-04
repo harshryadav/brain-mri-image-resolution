@@ -52,41 +52,97 @@ All proposal targets met. E3-E5 numbers are expected to shift with
 longer training (the proposal/paper used 100 epochs); we plan to re-run on
 GPU on UMD Zaratan (see [`scripts/zaratan/`](scripts/zaratan/README.md)).
 
+## Quick start (one command, Docker)
+
+This is the path your grader / professor / anyone-on-a-fresh-machine takes:
+
+1. **Unzip** the submission (or `git clone` the repo) and `cd` into it.
+2. **Install Docker Desktop** if you don't already have it
+   (<https://docs.docker.com/get-docker/>). Make sure `docker compose version`
+   prints a v2 string.
+3. **(Optional)** `cp .env.example .env` and paste in your
+   `PROCESSED_DATA_URL` (Google Drive shareable link to the preprocessed
+   tarball). The shipped `.env.example` has placeholder URLs you can edit.
+   `bash run.sh` will create `.env` from the example automatically if you
+   skip this step.
+4. **Run the demo:**
+
+   ```bash
+   bash run.sh
+   ```
+
+That single command:
+
+- Builds the Docker image (first time only, ~5 minutes).
+- Downloads the preprocessed FastMRI test cache from Google Drive into
+  `data/processed/` (first time only, ~1.7 GB; cached locally afterwards).
+- Loads each bundled checkpoint under `checkpoints/eN_*/`, evaluates it on
+  the held-out test split, and writes:
+  - `runs/results.csv` - PSNR / SSIM / NRMSE for every experiment.
+  - `runs/<exp>/samples/*.png` - side-by-side **LR | SR | HR** panels.
+  - `runs/<exp>/summary.json` - per-experiment metrics.
+
+CPU works out of the box. For GPU, uncomment the `deploy.resources` block
+in [`docker-compose.yml`](docker-compose.yml) (requires NVIDIA Container
+Toolkit on the host).
+
+### Other one-shot commands
+
+`run.sh` is a thin dispatcher; everything still runs inside the same
+container.
+
+```bash
+bash run.sh demo              # default; same as `bash run.sh`
+bash run.sh train             # train E2 (SRCNN) by default
+bash run.sh train configs/e5_agunet_attn_dcgan.yaml
+bash run.sh train-all         # train E1..E5 then aggregate to runs/results.csv
+bash run.sh preprocess        # raw .h5 -> data/processed/ (needs FASTMRI_DIR set)
+bash run.sh smoke             # synthetic phantom sanity check, no downloads
+bash run.sh shell             # interactive shell in the container
+bash run.sh tensorboard       # http://localhost:6006
+bash run.sh test              # pytest
+```
+
+Force a rebuild with `BRAINSR_REBUILD=1 bash run.sh`.
+
+### Native (no Docker) quick start
+
+If you'd rather use a venv:
+
+```bash
+make install
+make demo               # same flow as `bash run.sh`, but on the host Python
+# or for the no-data-needed phantom sanity check:
+make smoke
+make tb                 # http://localhost:6006
+```
+
 ## Project layout
 
 ```
 brain-mri-image-resolution/
+  run.sh           # one-command entry point (demo / train / preprocess / smoke)
+  Dockerfile docker-compose.yml Makefile pyproject.toml requirements.txt
   configs/         # YAML, one per experiment + base.yaml
-  src/brainsr/     # installable package (brainsr-{preprocess,train,eval,predict})
+  checkpoints/     # bundled best.pt + config.resolved.yaml per experiment (committed)
+  src/brainsr/     # installable package (brainsr-{preprocess,train,eval,predict,demo})
     data/          # fastmri_convert, degradation, dataset, splits
     models/        # bicubic, srcnn, agunet (+ attention gates), dcgan_critic
     cli/           # console-script entry points
     losses.py metrics.py trainer.py utils/
-  scripts/         # run_all_experiments.sh, FastMRI download notes, Zaratan SLURM jobs
+  scripts/         # download_{data,model}.py, run_all_experiments.sh, Zaratan SLURM jobs
   tests/           # pytest suite (uses synthetic phantom slices)
   data/sample/     # tiny synthetic dataset for `make smoke` (committed)
   data/{raw,processed}/  # gitignored - your FastMRI .h5 + the .npy cache
   runs/            # gitignored - per-experiment TB logs, checkpoints, samples
-  Dockerfile docker-compose.yml Makefile pyproject.toml requirements.txt
 ```
 
-## Quick start (no FastMRI required)
+## Re-training from scratch (optional)
 
-Generate a tiny synthetic phantom dataset and run a 1-epoch SRCNN training
-to verify the whole pipeline boots:
-
-```bash
-make install
-make smoke
-```
-
-Outputs land in `runs/_smoke/`. Open them in TensorBoard:
-
-```bash
-make tb     # http://localhost:6006
-```
-
-## Full pipeline with FastMRI
+The bundled checkpoints in `checkpoints/` already give you publishable
+metrics via `bash run.sh`. The rest of this section is only for users who
+want to re-train the models themselves (e.g. to extend the experiment grid
+or push past 100 epochs).
 
 1. **Get the data.** Follow [`scripts/download_fastmri_help.md`](scripts/download_fastmri_help.md).
    FastMRI is not redistributable, so this repo cannot ship raw data.
@@ -219,17 +275,44 @@ runs CPU-only out of the box; uncomment the `deploy.resources.reservations.devic
 block in [`docker-compose.yml`](docker-compose.yml) for GPU (requires the
 NVIDIA Container Toolkit).
 
+The friendly entry point is [`run.sh`](run.sh) (see *Quick start* above).
+Underneath, it just calls these standard `docker compose` services:
+
+| Service       | What it runs                                        |
+| ------------- | --------------------------------------------------- |
+| `demo`        | `python -m brainsr.cli.demo` (the default)          |
+| `preprocess`  | `python -m brainsr.cli.preprocess`                  |
+| `train`       | `python -m brainsr.cli.train --config ...`          |
+| `dev`         | interactive shell with the source bind-mounted      |
+| `tensorboard` | TB on port 6006                                     |
+
+If you'd rather call them directly:
+
 ```bash
 make docker-build
+make docker-demo                         # the one-command path
 make docker-shell                        # interactive shell
 make docker-preprocess                   # one-shot preprocessing
 make docker-train CONFIG=configs/e2_srcnn.yaml
 docker compose up tensorboard            # http://localhost:6006
 ```
 
-`docker-compose.yml` bind-mounts `${FASTMRI_DIR}` (read-only),
-`./data/processed`, and `./runs`, so checkpoints and TB logs persist on the
-host.
+`docker-compose.yml` bind-mounts `${PROCESSED_DIR}` (the .npy cache),
+`${RUNS_DIR}`, and `./checkpoints`, so all artifacts persist on the host
+across container runs. The `dev` and `preprocess` services additionally
+bind-mount `${FASTMRI_DIR}` read-only.
+
+### Where the bundled checkpoints come from
+
+`checkpoints/eN_*/` ships in the repo (and zip submission). Each folder
+holds a `best.pt` plus the `config.resolved.yaml` it was trained with, so
+the demo CLI can rebuild the exact model architecture and load weights
+without any guesswork. See [`checkpoints/README.md`](checkpoints/README.md)
+for the layout and how to refresh them after re-training.
+
+If `checkpoints/` is missing entirely (e.g. you cloned a stripped-down
+branch), set `CHECKPOINTS_URL` in `.env` and the demo will pull a tarball
+on first run.
 
 ## Architecture overview
 

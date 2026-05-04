@@ -1,7 +1,8 @@
 .PHONY: help install preprocess preprocess-sample \
         train-e1 train-e2 train-e3 train-e4 train-e5 \
-        eval run-all smoke test lint \
-        docker-build docker-shell docker-preprocess docker-train tb clean
+        eval run-all smoke test lint demo \
+        docker-build docker-shell docker-preprocess docker-train docker-demo \
+        download-data download-model tb clean
 
 # Python executable (requires >= 3.10). Search PATH for python3.10 or python3.
 # If not found, you can override: make PYTHON=python3.10 ... or set it in your shell
@@ -15,7 +16,10 @@ endif
 
 help:
 	@echo "Common targets:"
+	@echo "  demo             End-to-end inference demo (downloads data, evaluates bundled checkpoints)"
 	@echo "  install          pip install -e '.[torch,dev]'"
+	@echo "  download-data    Fetch preprocessed dataset from PROCESSED_DATA_URL"
+	@echo "  download-model   Fetch checkpoints from CHECKPOINTS_URL (fallback)"
 	@echo "  preprocess       Convert FastMRI .h5 -> cached .npy (uses FASTMRI_DIR)"
 	@echo "  preprocess-sample  Build a tiny synthetic sample under data/sample/"
 	@echo "  train-e1..e5     Train each experiment via configs/eN_*.yaml"
@@ -25,6 +29,7 @@ help:
 	@echo "  test             pytest"
 	@echo "  lint             ruff check"
 	@echo "  docker-build     Build the Docker image"
+	@echo "  docker-demo      Run the demo inside Docker (the 'one command' path)"
 	@echo "  docker-shell     Interactive shell in the dev container"
 	@echo "  tb               Launch TensorBoard on runs/ (port 6006)"
 
@@ -34,6 +39,15 @@ venv:
 
 install:
 	$(PYTHON) -m pip install -e '.[torch,dev]'
+
+demo:
+	$(PYTHON) -m brainsr.cli.demo
+
+download-data:
+	$(PYTHON) scripts/download_data.py --output-dir data/processed
+
+download-model:
+	$(PYTHON) scripts/download_model.py --output-dir checkpoints
 
 ## preprocess: converts every .h5 under the directories listed in FASTMRI_DIRS
 ## (whitespace-separated) or, if unset, the single FASTMRI_DIR. Forwards extra
@@ -80,6 +94,9 @@ lint:
 
 docker-build:
 	docker compose build
+
+docker-demo:
+	docker compose run --rm demo
 
 docker-shell:
 	docker compose run --rm dev bash

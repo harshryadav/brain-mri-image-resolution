@@ -27,8 +27,16 @@ RUN pip install -e .
 COPY configs ./configs
 COPY scripts ./scripts
 COPY tests ./tests
+COPY checkpoints ./checkpoints
+COPY data/sample ./data/sample
 COPY Makefile ./Makefile
 
-RUN mkdir -p /data/raw /workspace/data/processed /workspace/data/sample /workspace/runs
+# Create the runtime mount points that docker-compose binds to host folders.
+RUN mkdir -p /data/raw \
+    /workspace/data/processed \
+    /workspace/runs
 
-CMD ["bash"]
+# Default behavior: run the inference demo end-to-end. Compose services
+# override this for the train/preprocess/dev paths.
+ENTRYPOINT ["python", "-m", "brainsr.cli.demo"]
+CMD []
