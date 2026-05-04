@@ -99,29 +99,85 @@ def _download_gdrive_folder(url: str, dest_dir: Path) -> None:
         )
 
 
+def _download_drive_file_direct(file_id: str, dest: Path) -> Path:
+    """Direct streaming download from Google Drive that bypasses the virus-scan UI.
+
+    Uses the `drive.usercontent.google.com/download?confirm=t` endpoint, which
+    serves the file directly for any item shared as "Anyone with the link" -
+    including files >100 MB where the regular UI would show a confirmation page
+    (the page that ``gdown``'s HTML scraper periodically breaks on).
+    """
+    import requests  # bundled with gdown, always present in the image.
+
+    url = "https://drive.usercontent.google.com/download"
+    params = {"id": file_id, "export": "download", "confirm": "t"}
+    log.info("Downloading via direct Drive endpoint: id=%s -> %s", file_id, dest)
+
+    with requests.get(url, params=params, stream=True, allow_redirects=True, timeout=120) as r:
+        r.raise_for_status()
+        ctype = r.headers.get("Content-Type", "")
+        # If we got HTML back, the file isn't truly public, the daily quota is
+        # exhausted, or the URL endpoint changed shape. Fail loud with context.
+        if ctype.startswith("text/html"):
+            preview = r.text[:400].replace("\n", " ")
+            raise SystemExit(
+                "Got HTML instead of file bytes from Google Drive.\n"
+                f"  Content-Type: {ctype}\n"
+                f"  Body preview: {preview!r}\n"
+                "Likely causes: file isn't truly shared with 'Anyone with the link', "
+                "the daily download quota for that file was exceeded (wait 24h or use "
+                "a different account), or you need a fresh share link."
+            )
+        total = 0
+        with dest.open("wb") as f:
+            for chunk in r.iter_content(chunk_size=1024 * 1024):  # 1 MB
+                if chunk:
+                    f.write(chunk)
+                    total += len(chunk)
+    log.info("Downloaded %.1f MB to %s", total / (1024 * 1024), dest)
+    if not dest.exists() or dest.stat().st_size == 0:
+        raise SystemExit(f"Empty file at {dest} after direct download.")
+    return dest
+
+
 def _download_from_gdrive(file_id: str, dest: Path) -> Path:
+    """Pull a Drive file by ID, with a robust fallback for large/quota'd files.
+
+    Strategy:
+      1. Try ``gdown`` (handles small files and refresh-token cases cleanly).
+      2. On any failure - including the common ``FileURLRetrievalError`` for
+         large public files where Google changed their warning page - fall
+         back to a direct ``requests`` stream against the
+         ``drive.usercontent.google.com`` endpoint, which serves the bytes
+         without needing HTML scraping.
+    """
     try:
         import gdown
     except ImportError as e:
         raise SystemExit(
             "gdown is required for Google Drive downloads. Install with `pip install gdown`."
         ) from e
+
     log.info("Downloading via gdown: id=%s -> %s", file_id, dest)
-    # We pass the file id directly so we don't need gdown's URL fuzzy-parsing.
-    # `fuzzy` was deprecated/removed in recent gdown releases, and `use_cookies`
-    # is also version-sensitive, so we keep the call to a small, stable subset
-    # of kwargs that all 4.x/5.x gdown versions accept.
     try:
+        # Minimal, version-stable kwargs (no `fuzzy`/`use_cookies` - those drift).
         gdown.download(id=file_id, output=str(dest), quiet=False)
     except TypeError:
-        # Older gdown (<4.4) doesn't accept the id kwarg; fall back to a URL.
-        url = f"https://drive.google.com/uc?id={file_id}"
-        gdown.download(url, str(dest), quiet=False)
+        # Older gdown (<4.4) doesn't accept the `id` kwarg.
+        try:
+            gdown.download(f"https://drive.google.com/uc?id={file_id}", str(dest), quiet=False)
+        except Exception as e:
+            log.warning("gdown URL fallback failed (%s); trying direct endpoint", e)
+            return _download_drive_file_direct(file_id, dest)
+    except Exception as e:
+        # The common case: gdown raises FileURLRetrievalError for large public
+        # files because its HTML parser broke. The direct endpoint sidesteps it.
+        log.warning("gdown failed (%s); trying direct Drive endpoint", e)
+        return _download_drive_file_direct(file_id, dest)
+
     if not dest.exists() or dest.stat().st_size == 0:
-        raise SystemExit(
-            f"gdown produced no file at {dest}. "
-            "Confirm the share link is set to 'Anyone with the link' and try again."
-        )
+        log.warning("gdown produced an empty file at %s; trying direct endpoint", dest)
+        return _download_drive_file_direct(file_id, dest)
     return dest
 
 
