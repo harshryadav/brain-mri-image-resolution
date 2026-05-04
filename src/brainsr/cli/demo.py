@@ -136,8 +136,11 @@ def _evaluate_one(
 
     weights_path = ckpt_subdir / "best.pt"
     if weights_path.exists():
-        ckpt = torch.load(weights_path, map_location="cpu")
-        state = ckpt.get("model", ckpt)
+        try:
+            ckpt = torch.load(weights_path, map_location="cpu", weights_only=True)
+        except Exception:
+            ckpt = torch.load(weights_path, map_location="cpu", weights_only=False)
+        state = ckpt.get("model", ckpt) if isinstance(ckpt, dict) else ckpt
         model.load_state_dict(state)
         log.info("[%s] Loaded weights from %s", exp_name, weights_path)
     else:
