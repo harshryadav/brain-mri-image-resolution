@@ -6,7 +6,6 @@ build-backend = "setuptools.build_meta"
 name = "brainsr"
 version = "0.1.0"
 description = "Medical image super-resolution for brain MRI on the FastMRI dataset (MSML640 project)"
-readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [
